@@ -25,7 +25,10 @@ import os, re, sys, subprocess, time, json, math, hashlib
 SKIP_DIR = {".git",".pf","node_modules","build",".build","dist","Pods","DerivedData",
             ".next","out","venv",".venv","__pycache__",".cache","coverage",".swiftpm",
             "xcuserdata",".gradle","target",".turbo",".vercel","worktrees",
-            ".playwright-mcp","Carthage","vendor","third_party"}
+            ".playwright-mcp","Carthage","vendor","third_party",
+            "raw","decompiled","teardowns","smali","jadx","Generated","generated",
+            "Externals","Frameworks","Sources_generated","site-packages","bower_components"}
+MAXFILES = int(os.environ.get("PF_MAX", "50000"))   # a tree bigger than this is not hand-written
 EXT_LANG = {".swift":"swift",".ts":"ts",".tsx":"ts",".js":"js",".jsx":"js",".mjs":"js",
             ".py":"py",".html":"html",".css":"css",".scss":"css",".md":"md",
             ".rs":"rs",".go":"go",".rb":"rb",".java":"java",".kt":"kt",".sh":"sh",
@@ -118,16 +121,35 @@ def under(root, p):
     full = os.path.realpath(os.path.join(rr, p))
     return full if full == rr or full.startswith(rr + os.sep) else None
 
-def walk(root):
-    for dp, dns, fns in os.walk(root):
-        dns[:] = [d for d in dns if d not in SKIP_DIR and not d.endswith(".xcodeproj")
-                  and not d.endswith(".library") and not d.startswith(".pf")]
-        for f in fns:
-            ext = os.path.splitext(f)[1].lower()
-            if ext in EXT_LANG:
-                full = os.path.join(dp, f)
-                if os.path.islink(full): continue   # a link to an .env outside the project stays out
-                yield full, EXT_LANG[ext]
+CAPPED = [0]                                   # 1 when the walk stopped at the cap
+
+def walk(root, cap=None):
+    """Breadth first, so the project's own source arrives before a deep vendored tree,
+    and stop at the cap. A 610k-file folder of decompiled code must not cost 13 s a query."""
+    cap = MAXFILES if cap is None else cap
+    n = 0
+    queue = [root]
+    CAPPED[0] = 0
+    while queue:
+        nxt = []
+        for d in queue:
+            try: ents = list(os.scandir(d))
+            except OSError: continue
+            for e in ents:
+                try: isdir = e.is_dir(follow_symlinks=False)
+                except OSError: continue
+                if isdir:
+                    nm = e.name
+                    if nm in SKIP_DIR or nm.endswith((".xcodeproj", ".library")) or nm.startswith(".pf"):
+                        continue
+                    nxt.append(e.path); continue
+                ext = os.path.splitext(e.name)[1].lower()
+                if ext not in EXT_LANG: continue
+                if e.is_symlink(): continue    # a link to an .env outside the project stays out
+                if n >= cap: CAPPED[0] = 1; return      # stop dead: a bigger tree costs seconds
+                n += 1
+                yield e.path, EXT_LANG[ext]
+        queue = nxt
 
 def comment_text(line, lang):
     s = line.strip()
@@ -247,6 +269,9 @@ def build(root):
                            " ".join(f"{n}:{l}" for n, l in o) + "\n")
     os.replace(tmp, out)
     register(root)
+    if CAPPED[0]:
+        print(f"note: stopped at the cap of {MAXFILES:,} files. Add the big folder to SKIP_DIR, "
+              f"or raise PF_MAX.", file=sys.stderr)
     return out, len(frows), len(srows), time.time()-t0
 
 TSV = re.compile(r"[\t\r\n]")               # a filename may hold a newline on macOS

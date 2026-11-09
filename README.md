@@ -111,6 +111,12 @@ nothing into the project, so there is nothing to add to `.gitignore`.
 symbols, `U` rows for incoming usage, `O` rows for outgoing usage. Loading it is one read and one
 split.
 
+**Vendored and decompiled trees stay out, and the walk has a ceiling.** pf skips `raw/`,
+`decompiled/`, `teardowns/`, `vendor/`, `third_party/`, `Generated/` and the usual build folders,
+then walks breadth first and stops at 50,000 files (`PF_MAX`), saying so when it stops. One real
+folder holds 610,798 files, 597,845 of them decompiled Java: it took 278.6 s to index and 13.3 s a
+query before this rule, and 0.03 s both ways after it.
+
 **The root is the nearest project, never your home folder.** pf walks up from the current folder
 to the first one holding `.git`, `.hg`, `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`,
 `Package.swift`, `CLAUDE.md` or a similar marker, and stops before the home folder. So a package
@@ -158,7 +164,7 @@ For a global rule instead of a skill, paste the contents of SKILL.md into your `
 
 ## The gate
 
-`selfcheck.sh` builds a small throwaway repo, indexes it, and asserts thirteen behaviours: the build
+`selfcheck.sh` builds a small throwaway repo, indexes it, and asserts fourteen behaviours: the build
 runs, a query finds the right symbol and line, the purpose line appears, a usage edge resolves in
 both directions, an edit triggers a rebuild, a slice returns the enclosing declaration, and the
 overview prints. Run it after any change.

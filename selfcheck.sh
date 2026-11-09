@@ -58,4 +58,12 @@ pf -c | grep -q "^ts:1" || fail "a manifest did not anchor the root"
 cd "$R/home/newproj"
 HOME="$R/home" python3 "$PFPY" -c | grep -q "swift:1" || fail "the home folder was taken as a root"
 cd "$T"; rm -rf "$R"
-echo "pf selfcheck: 13/13 pass"
+# --- a vendored tree never enters the index, and the cap stops the walk ---
+V=$(mktemp -d); mkdir -p "$V/p/src" "$V/p/raw" "$V/p/vendor"; cd "$V/p"; git init -q .
+printf 'struct Real: View {}\n' > src/Real.swift
+for i in 1 2 3 4 5 6; do printf "class Dec$i {}\n" > "raw/Dec$i.java"; printf "struct Vnd$i: View {}\n" > "vendor/Vnd$i.swift"; done
+pf -c | grep -q "swift:1" || fail "a vendored or decompiled tree entered the index"
+for i in 1 2 3 4 5; do printf "struct More$i: View {}\n" > "src/More$i.swift"; done
+PF_MAX=2 python3 "$PFPY" -i 2>&1 | grep -q "stopped at the cap" || fail "the cap printed no warning"
+cd "$T"; rm -rf "$V"
+echo "pf selfcheck: 14/14 pass"
