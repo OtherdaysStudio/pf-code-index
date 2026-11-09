@@ -99,6 +99,12 @@ def root_of(start):
         if nxt == p: return os.path.abspath(start)
         p = nxt
 
+def under(root, p):
+    """Resolve a path that came from the index. None when it leaves the project."""
+    rr = os.path.realpath(root)
+    full = os.path.realpath(os.path.join(rr, p))
+    return full if full == rr or full.startswith(rr + os.sep) else None
+
 def walk(root):
     for dp, dns, fns in os.walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIR and not d.endswith(".xcodeproj")
@@ -106,7 +112,9 @@ def walk(root):
         for f in fns:
             ext = os.path.splitext(f)[1].lower()
             if ext in EXT_LANG:
-                yield os.path.join(dp, f), EXT_LANG[ext]
+                full = os.path.join(dp, f)
+                if os.path.islink(full): continue   # a link to an .env outside the project stays out
+                yield full, EXT_LANG[ext]
 
 def comment_text(line, lang):
     s = line.strip()
@@ -206,13 +214,18 @@ def build(root):
     for row, v in zip(frows, vecs):
         ranked = sorted(v.items(), key=lambda kv: -kv[1] * math.log(1 + N / (1 + df[kv[0]])))
         row[4] = " ".join(w for w, _ in ranked[:20])
-    os.makedirs(os.path.join(root,".pf"), exist_ok=True)
-    out = os.path.join(root,".pf","idx.tsv")
-    with open(out,"w") as fh:
+    d = os.path.join(root,".pf")
+    out = os.path.join(d,"idx.tsv")
+    if os.path.islink(d) or os.path.islink(out):
+        print("refusing: .pf is a symlink"); sys.exit(1)   # never write through a link
+    os.makedirs(d, exist_ok=True)
+    tmp = out + f".{os.getpid()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as fh:
         n, mx, tot = scan_state(root)
         fh.write(f"#pf3\t{time.time():.0f}\t{n}\t{len(srows)}\t{mx:.3f}\t{tot}\n")
-        for r in frows: fh.write("F\t" + "\t".join(str(x).replace("\t"," ") for x in r) + "\n")
-        for r in srows: fh.write("S\t" + "\t".join(str(x).replace("\t"," ") for x in r) + "\n")
+        for r in frows: fh.write("F\t" + "\t".join(TSV.sub(" ", str(x)) for x in r) + "\n")
+        for r in srows: fh.write("S\t" + "\t".join(TSV.sub(" ", str(x)) for x in r) + "\n")
         bylen = {}
         for (nm, rel), i in uses.items(): bylen.setdefault(nm, []).append((rel, i))
         for nm, lst in bylen.items():
@@ -221,8 +234,11 @@ def build(root):
         for (rel, sline), o in outs.items():
             if o: fh.write("O\t" + rel + "\t" + str(sline) + "\t" +
                            " ".join(f"{n}:{l}" for n, l in o) + "\n")
+    os.replace(tmp, out)
     register(root)
     return out, len(frows), len(srows), time.time()-t0
+
+TSV = re.compile(r"[\t\r\n]")               # a filename may hold a newline on macOS
 
 CHAINED = False                                  # set while a // call runs: one answer per part
 REG = os.path.expanduser("~/.cache/pf/roots.tsv")
@@ -619,8 +635,9 @@ def overview(root, cap=30):
 
 def slice_at(root, spec, span=40):
     path, _, ln = spec.partition(":")
-    full = os.path.join(root, path)
-    if not os.path.exists(full): full = path
+    full = under(root, path)
+    if not full or not os.path.exists(full) or os.path.islink(full):
+        print(f"outside the project: {path}"); return
     ln = int(ln or 1)
     with open(full, errors="ignore") as fh: lines = fh.read().split("\n")
     i = ln - 1
@@ -644,7 +661,8 @@ def refs(root, name, cap=12):
             "html":1,"css":1,"sql":1,"json":2,"yml":2,"toml":2,"sh":2,"md":3}
     hits, total = [], 0
     for r in F:
-        full = os.path.join(root, r[0])
+        full = under(root, r[0])
+        if not full: continue
         try:
             with open(full, errors="ignore") as fh: body = fh.read()
         except OSError: continue

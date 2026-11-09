@@ -123,6 +123,10 @@ is scored at a third, unless the question's own words name that side of the tree
 reaches the app and "border beam web" reaches the web folder. This single rule removed the need for
 the agent to name the language, and it took nine attempts to find.
 
+**Symlinks stay out.** A project often holds a link to a shared config or an `.env` that lives
+outside it. pf never reads through a link, and never resolves an indexed path outside the project
+root, so nothing from outside reaches the index or an agent's context.
+
 **The output is shaped by the question.** A question whose subject renders something gets the
 one-line edge answer and nothing else. Size, purpose and the neighbour digest are printed only when
 they could matter. A grep has no limit on its output because the project decides how many matches
@@ -144,7 +148,7 @@ For a global rule instead of a skill, paste the contents of SKILL.md into your `
 
 ## The gate
 
-`selfcheck.sh` builds a small throwaway repo, indexes it, and asserts seven behaviours: the build
+`selfcheck.sh` builds a small throwaway repo, indexes it, and asserts eleven behaviours: the build
 runs, a query finds the right symbol and line, the purpose line appears, a usage edge resolves in
 both directions, an edit triggers a rebuild, a slice returns the enclosing declaration, and the
 overview prints. Run it after any change.
