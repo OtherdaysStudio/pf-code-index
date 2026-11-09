@@ -1,6 +1,7 @@
 #!/bin/sh
 # pf self-check: build, query, auto-refresh on change, slice, refs. Exits 0 when all pass.
 set -e
+PFPY="$(cd "$(dirname "$0")" && pwd)/pf.py"   # the HOME case cannot use a shim that resolves ~
 T=$(mktemp -d)/proj; mkdir -p "$T/src"; cd "$T"; git init -q .
 cat > src/Widget.swift <<'EOF'
 /// The widget that holds the strip together.
@@ -46,4 +47,15 @@ mkdir -p .pf; sed 's/WidgetCard/FAKESYMBOL/g' "$IDX" > .pf/idx.tsv
 pf fakesymbol | grep -q "FAKESYMBOL" && fail "a shipped index was trusted"
 pf widget card | grep -q "WidgetCard:2" || fail "the real code was not indexed"
 rm -rf .pf "$S"
-echo "pf selfcheck: 11/11 pass"
+# --- root detection: a manifest anchors a root, and the home folder never is one ---
+R=$(mktemp -d); mkdir -p "$R/home/newproj" "$R/home/pkgs/web"
+cd "$R/home"; git init -q .
+for i in 1 2 3 4; do printf "struct Home$i: View {}\n" > "Home$i.swift"; done
+printf 'struct Only: View {}\n' > newproj/Only.swift
+printf '{"name":"web"}\n' > pkgs/web/package.json; printf 'export const Btn = 1\n' > pkgs/web/btn.ts
+cd "$R/home/pkgs/web"
+pf -c | grep -q "^ts:1" || fail "a manifest did not anchor the root"
+cd "$R/home/newproj"
+HOME="$R/home" python3 "$PFPY" -c | grep -q "swift:1" || fail "the home folder was taken as a root"
+cd "$T"; rm -rf "$R"
+echo "pf selfcheck: 13/13 pass"

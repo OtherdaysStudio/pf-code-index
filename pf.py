@@ -91,13 +91,21 @@ def clean_query(words):
     keep = [w for w in q if w not in QSTOP and stem(w) not in QSTOP]
     return [stem(w) for w in (keep or q)]
 
+ROOTMARK = (".git", ".hg", ".svn", "package.json", "Cargo.toml", "pyproject.toml", "go.mod",
+            "Package.swift", "project.yml", "CLAUDE.md", "Gemfile", "pom.xml", "composer.json")
+
 def root_of(start):
+    """The nearest folder that looks like a project. Never the home folder: a .git there
+    turns every stray call into a scan of everything."""
+    home = os.path.realpath(os.path.expanduser("~"))
     p = os.path.abspath(start)
     while True:
-        if os.path.isdir(os.path.join(p,".git")): return p   # we no longer leave a marker in the project
+        if os.path.realpath(p) == home: break
+        if any(os.path.exists(os.path.join(p, m)) for m in ROOTMARK): return p
         nxt = os.path.dirname(p)
-        if nxt == p: return os.path.abspath(start)
+        if nxt == p: break
         p = nxt
+    return os.path.abspath(start)
 
 def idx_path(root):
     """One index per real root, in our own cache. A cloned repo cannot ship or forge it."""

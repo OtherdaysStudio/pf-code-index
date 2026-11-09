@@ -111,6 +111,12 @@ nothing into the project, so there is nothing to add to `.gitignore`.
 symbols, `U` rows for incoming usage, `O` rows for outgoing usage. Loading it is one read and one
 split.
 
+**The root is the nearest project, never your home folder.** pf walks up from the current folder
+to the first one holding `.git`, `.hg`, `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`,
+`Package.swift`, `CLAUDE.md` or a similar marker, and stops before the home folder. So a package
+inside a monorepo indexes that package, and a `.git` in your home folder cannot turn a stray call
+into a scan of everything you own.
+
 **It refreshes itself.** Before any query, `pf` counts the files, takes the newest mtime and sums
 the sizes. If any of the three differs from the header, it rebuilds. The check costs milliseconds,
 so an agent never works from a stale index and never has to remember to rebuild.
@@ -152,7 +158,7 @@ For a global rule instead of a skill, paste the contents of SKILL.md into your `
 
 ## The gate
 
-`selfcheck.sh` builds a small throwaway repo, indexes it, and asserts eleven behaviours: the build
+`selfcheck.sh` builds a small throwaway repo, indexes it, and asserts thirteen behaviours: the build
 runs, a query finds the right symbol and line, the purpose line appears, a usage edge resolves in
 both directions, an edit triggers a rebuild, a slice returns the enclosing declaration, and the
 overview prints. Run it after any change.
