@@ -16,11 +16,11 @@
 A query that names a symbol which renders something answers in one line:
   path symbol:line holder:line > what it renders
 
-Index lives at <root>/.pf/idx.tsv, tab separated, four tables: F file, S symbol,
+Index lives in ~/.cache/pf/idx/, never in the project, tab separated, four tables: F file, S symbol,
 U incoming usage, O outgoing usage. It rebuilds itself when the file count, the
 newest mtime or the total size changes.
 """
-import os, re, sys, subprocess, time, json, math
+import os, re, sys, subprocess, time, json, math, hashlib
 
 SKIP_DIR = {".git",".pf","node_modules","build",".build","dist","Pods","DerivedData",
             ".next","out","venv",".venv","__pycache__",".cache","coverage",".swiftpm",
@@ -94,10 +94,15 @@ def clean_query(words):
 def root_of(start):
     p = os.path.abspath(start)
     while True:
-        if os.path.isdir(os.path.join(p,".git")) or os.path.isdir(os.path.join(p,".pf")): return p
+        if os.path.isdir(os.path.join(p,".git")): return p   # we no longer leave a marker in the project
         nxt = os.path.dirname(p)
         if nxt == p: return os.path.abspath(start)
         p = nxt
+
+def idx_path(root):
+    """One index per real root, in our own cache. A cloned repo cannot ship or forge it."""
+    h = hashlib.sha1(os.path.realpath(root).encode()).hexdigest()[:16]
+    return os.path.expanduser("~/.cache/pf/idx/" + h + ".tsv")
 
 def under(root, p):
     """Resolve a path that came from the index. None when it leaves the project."""
@@ -214,12 +219,10 @@ def build(root):
     for row, v in zip(frows, vecs):
         ranked = sorted(v.items(), key=lambda kv: -kv[1] * math.log(1 + N / (1 + df[kv[0]])))
         row[4] = " ".join(w for w, _ in ranked[:20])
-    d = os.path.join(root,".pf")
-    out = os.path.join(d,"idx.tsv")
-    if os.path.islink(d) or os.path.islink(out):
-        print("refusing: .pf is a symlink"); sys.exit(1)   # never write through a link
-    os.makedirs(d, exist_ok=True)
+    out = idx_path(root)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     tmp = out + f".{os.getpid()}.tmp"
+    if os.path.lexists(tmp): os.unlink(tmp)
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as fh:
         n, mx, tot = scan_state(root)
@@ -261,7 +264,7 @@ def resolve(name):
     return hits[0] if hits else None
 
 def load(root, auto=True):
-    p = os.path.join(root,".pf","idx.tsv")
+    p = idx_path(root)
     if not os.path.exists(p):
         if not auto: return None, None, None
         build(root)

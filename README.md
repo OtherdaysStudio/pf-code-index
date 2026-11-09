@@ -102,7 +102,8 @@ Put the question's own words in the query. The tool strips filler words and matc
 plain English works.
 
 The first call in a project builds the index and registers the project's name, which is what makes
-`-p` work later. The index sits at `<root>/.pf/idx.tsv`. Add `.pf/` to your `.gitignore`.
+`-p` work later. The index lives in `~/.cache/pf/`, keyed by the project's real path. pf writes
+nothing into the project, so there is nothing to add to `.gitignore`.
 
 ## How it works
 
@@ -123,9 +124,12 @@ is scored at a third, unless the question's own words name that side of the tree
 reaches the app and "border beam web" reaches the web folder. This single rule removed the need for
 the agent to name the language, and it took nine attempts to find.
 
-**Symlinks stay out.** A project often holds a link to a shared config or an `.env` that lives
-outside it. pf never reads through a link, and never resolves an indexed path outside the project
-root, so nothing from outside reaches the index or an agent's context.
+**The indexed repository is never trusted.** Pointing pf at a repository you cloned is a normal
+use: you want to move around someone else's code quickly. So the repository gets no say in what pf
+does. pf never reads through a symlink, never resolves an indexed path outside the project root,
+and keeps the index in `~/.cache/pf` rather than in the project, so a repository can neither ship a
+forged index nor steer a write. Each of those was a real hole, each was demonstrated by running it,
+and each is now a case in the gate.
 
 **The output is shaped by the question.** A question whose subject renders something gets the
 one-line edge answer and nothing else. Size, purpose and the neighbour digest are printed only when

@@ -27,24 +27,23 @@ pf -s src/Strip.swift:2 | grep -q "enum Strip" || fail "slice wrong"
 pf -r WidgetCard | grep -q "Widget.swift:2" || fail "refs wrong"
 pf -t | grep -q "SCREENS" || fail "overview missing screens"
 
-# --- a symlink must never pull content from outside the project ---
-S=$(mktemp -d); echo "AWS_SECRET=hunter2" > "$S/secret.txt"
-# 1. a symlinked source file must never be read into the index
-ln -s "$S/secret.txt" src/Leak.py
+# --- nothing outside the project reaches the index, and the project holds no index ---
+S=$(mktemp -d); printf '# token ghp_LIVE7788 for deploy\nAPI_KEY = "sk-live-9931"\n' > "$S/.env.py"
+# 1. a symlinked source file must never be read
+ln -s "$S/.env.py" src/Config.py
 pf -i > /dev/null
-grep -rq "hunter2" .pf/ && fail "a symlinked file leaked into the index"
-pf leak secret | grep -q "hunter2" && fail "a symlinked file leaked into a query"
-rm src/Leak.py
-# 2. an index path that leaves the project must be refused, not read
-pf -s "../../../../../../$S/secret.txt:1" | grep -q "outside the project" || fail "path traversal not refused"
-# 3. .pf as a symlink must stop the write, not redirect it
-rm -rf .pf; ln -s "$S" .pf
-pf -i 2>&1 | grep -q "refusing" || fail "a symlinked .pf did not stop the build"
-test -f "$S/idx.tsv" && fail "the build wrote through a symlinked .pf"
-rm .pf
-# 4. idx.tsv as a symlink must stop the write too
-mkdir .pf; ln -s "$S/secret.txt" .pf/idx.tsv
-pf -i 2>&1 | grep -q "refusing" || fail "a symlinked idx.tsv did not stop the build"
-grep -q "hunter2" "$S/secret.txt" || fail "the build overwrote a file through a symlink"
+pf config token api | grep -q "ghp_LIVE7788" && fail "a symlinked file leaked into a query"
+pf -s src/Config.py:1 | grep -q "outside the project" || fail "a symlinked path was not refused"
+rm src/Config.py
+# 2. a path that leaves the project must be refused, not read
+pf -s "../../../../../../$S/.env.py:1" | grep -q "outside the project" || fail "path traversal not refused"
+# 3. pf must write nothing into the project
+pf -i > /dev/null
+test -e .pf && fail "pf wrote an index into the project"
+# 4. an index the repo ships must be ignored, even a well-formed one
+IDX=$(pf -i | awk '{print $1}')
+mkdir -p .pf; sed 's/WidgetCard/FAKESYMBOL/g' "$IDX" > .pf/idx.tsv
+pf fakesymbol | grep -q "FAKESYMBOL" && fail "a shipped index was trusted"
+pf widget card | grep -q "WidgetCard:2" || fail "the real code was not indexed"
 rm -rf .pf "$S"
 echo "pf selfcheck: 11/11 pass"

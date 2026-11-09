@@ -53,4 +53,5 @@ That is usually the whole answer.
 ## First use in a project
 
 The first call indexes the project and registers its folder name, which is what makes `-p` work from
-anywhere afterwards. Add `.pf/` to the project's `.gitignore`.
+anywhere afterwards. The index lives in `~/.cache/pf`, never in the project, so nothing needs
+ignoring in git and a repository you cloned cannot influence what pf tells you.
